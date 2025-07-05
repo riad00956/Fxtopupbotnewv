@@ -1,160 +1,120 @@
-
-const { Telegraf } = require("telegraf");
-require("dotenv").config();
+const { Telegraf, Markup } = require('telegraf');
+require('dotenv').config();
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
-const ADMINS = process.env.ADMINS.split(",");
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
-const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
+const ADMIN_ID = 7832264582;
+const paymentNumbers = ['📲 bKash/Nagad: 01965064030', '📲 bKash/Nagad: 01937240300'];
 
-const loggedInAdmins = new Set();
-const userUIDs = {};
+const diamondPackages = [
+  { id: 'd1', label: '💎25 = 28TK' },
+  { id: 'd2', label: '💎60 = 50TK' },
+  { id: 'd3', label: '💎170 = 130TK' },
+  { id: 'd4', label: '💎240 = 190TK' },
+  { id: 'd5', label: '💎355 = 270TK' },
+  { id: 'd6', label: '💎425 = 320TK' },
+  { id: 'd7', label: '💎610 = 490TK' },
+  { id: 'd8', label: '💎725 = 595TK' },
+  { id: 'd9', label: '💎860 = 680TK' },
+  { id: 'd10', label: '💎1080 = 900TK' },
+  { id: 'd11', label: '💎1240 = 1020TK' },
+  { id: 'd12', label: '💎1450 = 1200TK' },
+  { id: 'd13', label: '💎1720 = 1270TK' },
+  { id: 'd14', label: '💎2000 = 1450TK' },
+  { id: 'd15', label: '💎2530 = 1690TK' },
+  { id: 'd16', label: '💎3000 = 2000TK' },
+  { id: 'd17', label: '💎3760 = 2700TK' },
+  { id: 'd18', label: '💎5060 = 3670TK' },
+  { id: 'd19', label: '💎10120 = 6900TK' }
+];
+
 const orders = {};
-
-function isAdmin(id) {
-  return ADMINS.includes(id.toString()) && loggedInAdmins.has(id.toString());
-}
+const sessions = {};
 
 bot.start((ctx) => {
-  const name = ctx.from.first_name || "ব্যবহারকারী";
   ctx.reply(
-    `👋 হ্যালো ${name}!
+    `📝 *Welcome to FX TOP UP BOT!*
 
-স্বাগতম *FX TOP UP BOT*-এ!
+⚠️ Please read the rules:
+1. Use valid UID.
+2. Send correct TrxID after payment.
+3. Wait for confirmation.
 
-🔐 প্রথমে আপনার UID লগইন করুন:
-/login <your UID>
-
-💡 আপনি ডায়মন্ড অফার দেখতে ও অর্ডার করতে পারবেন সহজেই।`,
-    { parse_mode: "Markdown" }
+Click "✅ Accept" to continue.`,
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([Markup.button.callback('✅ Accept', 'accept_rules')])
+    }
   );
 });
 
-bot.command("login", (ctx) => {
-  const parts = ctx.message.text.split(" ");
-  const isAdminCmd = ADMINS.includes(ctx.from.id.toString());
-
-  if (isAdminCmd && parts[1] === ADMIN_PASSWORD) {
-    loggedInAdmins.add(ctx.from.id.toString());
-    return ctx.reply("✅ অ্যাডমিন লগইন সফল!");
-  }
-
-  const uid = parts[1];
-  if (!uid || isNaN(uid)) {
-    return ctx.reply("❌ সঠিক UID দিন।
-Usage: /login <UID>");
-  }
-
-  userUIDs[ctx.from.id] = uid;
-  ctx.reply(`✅ আপনার UID ${uid} সংরক্ষণ করা হয়েছে।`);
+bot.action('accept_rules', (ctx) => {
+  ctx.editMessageText('💎 Choose a Diamond Package:', {
+    ...Markup.inlineKeyboard(diamondPackages.map(pkg => Markup.button.callback(pkg.label, pkg.id)), { columns: 2 })
+  });
 });
 
-bot.command("logout", (ctx) => {
-  if (isAdmin(ctx.from.id)) {
-    loggedInAdmins.delete(ctx.from.id.toString());
-    return ctx.reply("🚪 অ্যাডমিন লগআউট সম্পন্ন হয়েছে।");
-  }
-
-  delete userUIDs[ctx.from.id];
-  ctx.reply("🚪 UID মুছে ফেলা হয়েছে।");
+diamondPackages.forEach(pkg => {
+  bot.action(pkg.id, (ctx) => {
+    const userId = ctx.from.id;
+    orders[userId] = { package: pkg.label };
+    sessions[userId] = 'awaiting_uid';
+    ctx.reply('📥 Please enter your Free Fire UID:');
+  });
 });
 
-bot.command("confirm", (ctx) => {
-  if (!isAdmin(ctx.from.id)) return ctx.reply("❌ অনুমতি নেই!");
-  const uid = ctx.message.text.split(" ")[1];
-  ctx.reply(`☑️ UID ${uid} কনফার্ম করা হয়েছে।`);
-  bot.telegram.sendMessage(uid, "✅ আপনার অর্ডার সফলভাবে কনফার্ম করা হয়েছে!");
-});
+bot.on('text', async (ctx) => {
+  const userId = ctx.from.id;
+  const session = sessions[userId];
 
-bot.command("reject", (ctx) => {
-  if (!isAdmin(ctx.from.id)) return ctx.reply("❌ অনুমতি নেই!");
-  const uid = ctx.message.text.split(" ")[1];
-  ctx.reply(`❌ UID ${uid} এর অর্ডার বাতিল করা হয়েছে।`);
-  bot.telegram.sendMessage(uid, "❌ দুঃখিত, আপনার অর্ডার বাতিল করা হয়েছে।");
-});
+  if (!orders[userId] || !session) return;
 
-bot.hears("💎 ডায়মন্ড কিনুন", (ctx) => {
-  const uid = userUIDs[ctx.from.id];
-  if (!uid) {
-    return ctx.reply("⚠️ অনুগ্রহ করে আগে আপনার UID সেট করুন:
-/login <UID>");
-  }
+  if (session === 'awaiting_uid') {
+    orders[userId].uid = ctx.message.text;
+    sessions[userId] = 'awaiting_trxid';
+    ctx.reply(`💳 Pay to one of the numbers:
+${paymentNumbers.join('
+')}
 
-  ctx.reply(`✅ UID সেট হয়েছে। এখন শুধুমাত্র অফার নম্বর লিখে অর্ডার করুন।`);
-});
+Then send your TrxID:`);
+  } else if (session === 'awaiting_trxid') {
+    orders[userId].trxid = ctx.message.text;
+    orders[userId].status = 'pending';
+    sessions[userId] = null;
 
-bot.hears("⭐ ডায়মন্ড অফার", (ctx) => {
-  ctx.reply(`🔥 *ডায়মন্ড অফার:*
+    ctx.reply('📩 Your order has been submitted. Please wait for admin confirmation.');
 
-1. 25💎 = 28৳
-2. 50💎 = 45৳
-3. 115💎 = 95৳
-4. 240💎 = 185৳
-5. 355💎 = 270৳
-6. 480💎 = 360৳
-7. 610💎 = 490৳
-8. 725💎 = 595৳
-9. 850💎 = 630৳
-10. 1090💎 = 805৳
-11. 1240💎 = 900৳
-12. 1480💎 = 1120৳
-13. 1720💎 = 1270৳
-14. 1850💎 = 1350৳
-15. 2090💎 = 1500৳
-16. 2530💎 = 1690৳
-17. 3140💎 = 2400৳
-18. 3770💎 = 2700৳
-19. 5060💎 = 3670৳
-20. 10120💎 = 6900৳
-⭐ Weekly = 165৳
-⭐ Monthly = 800৳
-⭐ Level Up Pass = 170৳
-⭐ Evo Access 3d/7d/30d = 80৳/120৳/400৳
-⭐ Weekly Lite ×1/×2/×3 = 45৳/90৳/135৳`, { parse_mode: "Markdown" });
-});
-
-bot.hears("📜 রুলস", (ctx) => {
-  ctx.reply("📌 শুধুমাত্র ফ্রি ফায়ার UID টপ আপ
-📌 শুধুমাত্র বাংলাদেশ সার্ভার
-📌 ভুল UID দিলে দায়িত্ব গ্রাহকের
-📌 অর্ডার কনফার্মের জন্য অপেক্ষা করুন");
-});
-
-bot.hears("ℹ️ সাহায্য", (ctx) => {
-  ctx.reply("❓ সহায়তার জন্য যোগাযোগ করুন: @rifatbro22");
-});
-
-const validOfferNumbers = [
-  "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
-  "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
-  "301", "weekly", "monthly"
-];
-
-bot.on("text", (ctx) => {
-  const msg = ctx.message.text.trim().toLowerCase();
-  const uid = userUIDs[ctx.from.id];
-
-  if (!uid || isAdmin(ctx.from.id)) return;
-
-  if (validOfferNumbers.includes(msg)) {
-    orders[uid] = {
-      from: ctx.from,
-      offer: msg,
-      status: "pending"
-    };
-
-    ctx.reply(`✅ আপনার UID ${uid} এর জন্য অফার ${msg} অর্ডার গ্রহণ করা হয়েছে।`);
-
-    ADMINS.forEach((adminId) => {
-      bot.telegram.sendMessage(
-        adminId,
-        `🆕 নতুন অর্ডার:
-👤 ইউজার: @${ctx.from.username || "N/A"} (${ctx.from.id})
-🆔 UID: ${uid}
-📦 অফার: ${msg}`
-      );
-    });
+    await bot.telegram.sendMessage(
+      ADMIN_ID,
+      `📬 *New Order*
+👤 User: @${ctx.from.username || 'N/A'} (${userId})
+💎 Package: ${orders[userId].package}
+🆔 UID: ${orders[userId].uid}
+💳 TrxID: ${orders[userId].trxid}`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          Markup.button.callback('✅ Confirm', `confirm_${userId}`),
+          Markup.button.callback('❌ Reject', `reject_${userId}`)
+        ])
+      }
+    );
   }
 });
 
-bot.launch().then(() => console.log("🤖 FX TOP UP BOT চালু হয়েছে (Polling Mode)"));
+bot.action(/confirm_(\d+)/, async (ctx) => {
+  const userId = ctx.match[1];
+  if (ctx.from.id !== ADMIN_ID) return ctx.answerCbQuery("You're not authorized.");
+  await bot.telegram.sendMessage(userId, '✅ Your order has been *confirmed*!', { parse_mode: 'Markdown' });
+  ctx.editMessageText('✅ Order confirmed.');
+});
+
+bot.action(/reject_(\d+)/, async (ctx) => {
+  const userId = ctx.match[1];
+  if (ctx.from.id !== ADMIN_ID) return ctx.answerCbQuery("You're not authorized.");
+  await bot.telegram.sendMessage(userId, '❌ Your order was *rejected*. Please try again.', { parse_mode: 'Markdown' });
+  ctx.editMessageText('❌ Order rejected.');
+});
+
+bot.launch();
+console.log('🚀 FX TOP UP BOT is running...');
+  
